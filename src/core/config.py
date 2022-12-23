@@ -28,6 +28,7 @@ class AppSettings(BaseSettings):
     blacklist: set = ("localhost", )
     if os.getenv('RUN_IN_DOCKER'):
         os.environ['DATABASE_DSN'] = database_doker_dsn
+        database_dsn = database_doker_dsn
     else:
         os.environ['DATABASE_DSN'] = database_dsn
 

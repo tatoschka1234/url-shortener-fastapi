@@ -7,6 +7,7 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncEngine
 from src.db.db import Base
+from src.core.config import app_settings
 from src.models.urlmodel import UrlModel, UrlUsageModel
 from alembic import context
 from dotenv import load_dotenv
@@ -31,7 +32,7 @@ target_metadata = Base.metadata
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.
-config.set_main_option('sqlalchemy.url', os.environ['DATABASE_DSN'])
+config.set_main_option('sqlalchemy.url', app_settings.database_dsn)
 
 
 def run_migrations_offline() -> None:

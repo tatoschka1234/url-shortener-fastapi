@@ -1,4 +1,3 @@
-import pytest
 import random
 import string
 
@@ -6,14 +5,14 @@ from fastapi import status
 from httpx import AsyncClient
 from http import HTTPStatus
 from sqlalchemy.ext.asyncio import AsyncSession
+from src.main import app
 
 
-@pytest.mark.asyncio
 async def test_create_short_url(client: AsyncClient,
                                 async_session: AsyncSession) -> None:
     url = ''.join(random.choices(string.ascii_lowercase, k=5))
     response = await client.post(
-        '/api/v1/tinyurl/',
+        app.url_path_for("create_short_url"),
         json={'original_url': f'http://{url}.com'}
     )
 
@@ -21,14 +20,15 @@ async def test_create_short_url(client: AsyncClient,
     assert 'short_url' in response.json()
 
 
-@pytest.mark.asyncio
 async def test_create_several_urls(client: AsyncClient,
                                 async_session: AsyncSession) -> None:
+    url1 = f'{client.base_url}{app.url_path_for("info_handler")}'
+    url2 = f'{client.base_url}{app.url_path_for("check_db_status")}'
     response = await client.post(
-        '/api/v1/tinyurl/multi',
+        app.url_path_for("create_short_urls"),
         json=[
-            {'original_url': 'http://127.0.0.1:8000/info/version/'},
-            {'original_url': 'http://127.0.0.1:8000/info/ping'},
+            {'original_url': url1},
+            {'original_url': url2},
         ]
     )
     assert response.status_code == HTTPStatus.CREATED
@@ -41,52 +41,52 @@ async def test_create_several_urls(client: AsyncClient,
         assert result.get('original_url')
 
 
-@pytest.mark.asyncio
 async def test_create_duplicate(client: AsyncClient,
                                 async_session: AsyncSession) -> None:
+    url = f'{client.base_url}{app.url_path_for("info_handler")}'
     response = await client.post(
-        '/api/v1/tinyurl/',
-        json=
-        {'original_url': 'http://127.0.0.1:8000/info/version/'},
+        app.url_path_for("create_short_url"),
+        json={'original_url': url}
     )
     assert response.status_code == HTTPStatus.BAD_REQUEST
     assert "duplicate key" in response.text
 
 
-@pytest.mark.asyncio
 async def test_get_all(client: AsyncClient,
                        async_session: AsyncSession) -> None:
-    response = await client.get("/api/v1/tinyurl/")
+    response = await client.get(app.url_path_for("read_entities"),)
     assert response.status_code == 200
     results = response.json()
     assert isinstance(results, list)
     assert len(results) > 2
 
 
-@pytest.mark.asyncio
 async def test_get_by_url(client: AsyncClient,
                           async_session: AsyncSession) -> None:
-    response = await client.get("/api/v1/tinyurl/2")
+    response = await client.get(app.url_path_for("get_url", url_id=2))
+    expected_url = f'{client.base_url}{app.url_path_for("info_handler")}'
     assert response.status_code == HTTPStatus.TEMPORARY_REDIRECT
-    assert response.headers.get('Location') == 'http://127.0.0.1:8000/info/version/'
+    assert expected_url in response.headers.get('Location')
 
 
-@pytest.mark.asyncio
 async def test_mark_deleted(client: AsyncClient,
                             async_session: AsyncSession) -> None:
-    await client.patch("/api/v1/tinyurl/", params={"url_id": 2})
-    response = await client.get("/api/v1/tinyurl/2/", follow_redirects=True)
+    await client.patch(app.url_path_for("delete_url"), params={"url_id": 2})
+    response = await client.get(app.url_path_for("get_url", url_id=2),
+                                follow_redirects=True)
     assert response.status_code == HTTPStatus.GONE
     result = response.json()
     assert "marked as deleted" in result.get("detail")
 
 
-@pytest.mark.asyncio
 async def test_get_status(client: AsyncClient,
                           async_session: AsyncSession) -> None:
-    await client.get("/api/v1/tinyurl/3/", follow_redirects=True)
-    await client.get("/api/v1/tinyurl/3/", follow_redirects=True)
-    response = await client.get("/api/v1/tinyurl/3/status",
+    await client.get(app.url_path_for("get_url", url_id=3),
+                     follow_redirects=True)
+    await client.get(app.url_path_for("get_url", url_id=3),
+                     follow_redirects=True)
+    response = await client.get(app.url_path_for("get_url_usage_status",
+                                                 short_url_id=3),
                                 params={"full-info": True})
     assert response.status_code == HTTPStatus.OK
     results = response.json()
