@@ -71,7 +71,7 @@ async def test_get_by_url(client: AsyncClient,
 
 async def test_mark_deleted(client: AsyncClient,
                             async_session: AsyncSession) -> None:
-    await client.patch(app.url_path_for("delete_url"), params={"url_id": 2})
+    await client.delete(app.url_path_for("delete_url"), params={"url_id": 2})
     response = await client.get(app.url_path_for("get_url", url_id=2),
                                 follow_redirects=True)
     assert response.status_code == HTTPStatus.GONE

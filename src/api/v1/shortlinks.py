@@ -1,19 +1,17 @@
-import sys
 from fastapi import APIRouter, Depends, HTTPException, status, Request, \
     Response, Query
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Any, List, Optional, Union
+from typing import Optional
 
 from src.db.db import get_session
 from src.schemas import shorturl as shorturl_schema
 from src.services.urls import url_crud, usage_crud
 
 router = APIRouter()
-info_router = APIRouter()
 
 
-@router.get("/", response_model=List[shorturl_schema.ShortUrl])
+@router.get("/", response_model=list[shorturl_schema.ShortUrl])
 async def read_entities(
         *,
         db: AsyncSession = Depends(get_session),
@@ -23,16 +21,16 @@ async def read_entities(
             alias='max-size',
             description='Query max size.'
         ),
-        skip: int = Query(
+        offset: int = Query(
             default=0,
             ge=0,
             description='Query offset.'
         ),
-) -> Any:
+) -> list[shorturl_schema.ShortUrl]:
     """
     Retrieve all records.
     """
-    return await url_crud.get_multi(db=db, skip=skip, limit=limit)
+    return await url_crud.get_multi(db=db, skip=offset, limit=limit)
 
 
 @router.get("/{url_id}", response_class=RedirectResponse,
@@ -57,7 +55,7 @@ async def get_url(
         url_id: int,
         request: Request,
         db: AsyncSession = Depends(get_session),
-) -> Any:
+) -> RedirectResponse:
     """
     Redirect to original url by ID.
     """
@@ -70,15 +68,17 @@ async def get_url(
     if record.deleted:
         raise HTTPException(status_code=status.HTTP_410_GONE,
                             detail=f"URL with {url_id = } marked as deleted")
-    obj_in = {"client_host": request.client.host,
-              "client_port": request.client.port,
-              "url_id": url_id}
+    obj_in: shorturl_schema.UrlUsageCreate = shorturl_schema.UrlUsageCreate(
+        client_host=request.client.host,
+        client_port=request.client.port,
+        url_id=url_id
+    )
     await usage_crud.create(db=db, obj_in=obj_in)
     return RedirectResponse(record.original_url)
 
 
 @router.get("/{short_url_id}/status", description='Get URL usage status',
-            response_model=Union[int, List[shorturl_schema.UrlUsageFull]],
+            response_model=int | list[shorturl_schema.UrlUsageFull],
             responses={
                 404:
                     {
@@ -103,7 +103,7 @@ async def get_url_usage_status(
             description='Query offset.'
         ),
         db: AsyncSession = Depends(get_session),
-) -> Any:
+) -> int | list[shorturl_schema.UrlUsageFull]:
     """
     Get URL usage status.
     """
@@ -120,7 +120,7 @@ async def get_url_usage_status(
 
 @router.post(
     "/",
-    response_model=Union[shorturl_schema.ShortUrl, shorturl_schema.HTTPError],
+    response_model=shorturl_schema.ShortUrl | shorturl_schema.HTTPError,
     status_code=status.HTTP_201_CREATED,
     description='Create a short URL',
     responses={
@@ -134,7 +134,7 @@ async def create_short_url(
     *,
     db: AsyncSession = Depends(get_session),
     url_in: shorturl_schema.ShortUrlCreate,
-) -> Any:
+) -> shorturl_schema.ShortUrl:
     """
     Create new short url.
     """
@@ -146,7 +146,7 @@ async def create_short_url(
 
 
 @router.post(
-    "/multi", response_model=List[shorturl_schema.ShortUrl],
+    "/multi", response_model=list[shorturl_schema.ShortUrl],
     status_code=status.HTTP_201_CREATED,
     description='Create several short URLs',
     responses={
@@ -159,39 +159,25 @@ async def create_short_url(
 async def create_short_urls(
     *,
     db: AsyncSession = Depends(get_session),
-    urls_in: List[shorturl_schema.ShortUrlCreate],
-) -> Any:
+    urls_in: list[shorturl_schema.ShortUrlCreate],
+) -> list[shorturl_schema.ShortUrl]:
     """
     Create new short urls.
     """
-    url = await url_crud.create_multi(db=db, objs_in=urls_in)
-    if url:
+    if url := await url_crud.create_multi(db=db, objs_in=urls_in):
         return url
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                         detail="Url already exists in the system")
 
 
-@router.patch("/", description='Mark url as Gone')
+@router.delete("/", description='Mark url as Gone')
 async def delete_url(
     *,
     db: AsyncSession = Depends(get_session),
     url_id: int,
-) -> Any:
+) -> Response:
     """
     Mark url as Gone.
     """
     await url_crud.update_deleted_field(db=db, url_id=url_id)
     return Response(status_code=status.HTTP_200_OK)
-
-
-@info_router.get('/version')
-async def info_handler():
-    return {
-        'api': 'v1',
-        'python': sys.version_info
-    }
-
-
-@info_router.get('/ping', response_model=shorturl_schema.DBHealthModel)
-async def check_db_status(db: AsyncSession = Depends(get_session)) -> Any:
-    return await url_crud.get_db_status(db=db)

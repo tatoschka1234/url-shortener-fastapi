@@ -12,8 +12,6 @@ logger = logging.getLogger(__name__)
 Base = declarative_base()
 
 database_dsn = app_settings.database_dsn
-if "pytest" in sys.modules:
-    database_dsn = app_settings.database_dsn_test
 
 engine = create_async_engine(database_dsn, echo=True, future=True)
 async_session = sessionmaker(

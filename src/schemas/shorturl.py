@@ -12,11 +12,13 @@ class HTTPError(BaseModel):
         }
 
 
-class DBHealthModel(BaseModel):
-    db_status: str
-
+class ORMBase(BaseModel):
     class Config:
         orm_mode = True
+
+
+class DBHealthModel(ORMBase):
+    db_status: str
 
 
 class ShortUrlBase(BaseModel):
@@ -27,14 +29,11 @@ class ShortUrlCreate(ShortUrlBase):
     pass
 
 
-class ShortUrl(ShortUrlBase):
+class ShortUrl(ORMBase):
     id: int
     original_url: str
     short_url: str
     created_at: datetime
-
-    class Config:
-        orm_mode = True
 
 
 class UrlUsageBase(BaseModel):
@@ -46,13 +45,10 @@ class UrlUsageCreate(UrlUsageBase):
     client_port: int
 
 
-class UrlUsage(UrlUsageBase):
+class UrlUsage(ORMBase):
     id: int
     url_id: int
     used_at: datetime
-
-    class Config:
-        orm_mode = True
 
 
 class UrlUsageFull(UrlUsageBase):

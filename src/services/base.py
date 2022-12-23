@@ -1,11 +1,11 @@
 import logging.config
 import pyshorteners
 
-from typing import Any, Generic, List, Optional, Type, TypeVar, Union
-from fastapi.encoders import jsonable_encoder
+from typing import Any, Generic, Optional, Type, TypeVar
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy import func, update
 from src.db.db import Base
 from sqlalchemy import exc
 
@@ -75,10 +75,10 @@ class RepositoryDB(Repository, Generic[ModelType, CreateSchemaType,
         return url
 
     async def create_multi(self, db: AsyncSession,
-                           objs_in: List[CreateSchemaType]) -> List[ModelType]:
+                           objs_in: list[CreateSchemaType]) -> list[ModelType]:
         new_objs = []
         for obj in objs_in:
-            obj_in_data = jsonable_encoder(obj)
+            obj_in_data = obj.dict()
             long_url = self.check_url(obj_in_data["original_url"])
             short_url = type_tiny.tinyurl.short(long_url)
             db_obj = self._model(**obj_in_data)
@@ -99,14 +99,14 @@ class RepositoryDB(Repository, Generic[ModelType, CreateSchemaType,
 
     async def get_multi(
         self, db: AsyncSession, *, skip=0, limit=100
-    ) -> List[ModelType]:
+    ) -> list[ModelType]:
         statement = select(self._model).offset(skip).limit(limit)
         results = await db.execute(statement=statement)
         return results.scalars().all()
 
     async def create(self, db: AsyncSession, *,
                      obj_in: CreateSchemaType) -> ModelType:
-        obj_in_data = jsonable_encoder(obj_in)
+        obj_in_data = obj_in.dict()
         long_url = self.check_url(obj_in_data["original_url"])
         try:
             short_url = type_tiny.tinyurl.short(long_url)
@@ -133,14 +133,11 @@ class RepositoryDB(Repository, Generic[ModelType, CreateSchemaType,
         self,
         db: AsyncSession,
         *,
-            url_id: int
+        url_id: int
     ) -> ModelType:
-        record = await self.get(db, url_id)
-        record.deleted = True
-        db.add(record)
+        statement = update(self._model).where(self._model.id == url_id).values(deleted=True)
+        await db.execute(statement=statement)
         await db.commit()
-        await db.refresh(record)
-        return record
 
 
 class RepositoryUsage(Repository, Generic[ModelType, CreateSchemaType,
@@ -150,7 +147,7 @@ class RepositoryUsage(Repository, Generic[ModelType, CreateSchemaType,
 
     async def create(self, db: AsyncSession, *,
                      obj_in: CreateSchemaType) -> ModelType:
-        obj_in_data = jsonable_encoder(obj_in)
+        obj_in_data = obj_in.dict()
         db_obj = self._model(**obj_in_data)
         db.add(db_obj)
         await db.commit()
@@ -159,13 +156,16 @@ class RepositoryUsage(Repository, Generic[ModelType, CreateSchemaType,
 
     async def count(self, db: AsyncSession, *, max_result=10, offset=0,
                     full_info=False,
-                    obj_id: int) -> Union[int, List[ModelType]]:
-        statement = select(self._model.url_id, self._model.used_at,
-                           self._model.client_host,
-                           self._model.client_port
-                           ).where(self._model.url_id == obj_id).offset(
-            offset).limit(max_result)
-        results = await db.execute(statement=statement)
+                    obj_id: int) -> int | list[ModelType]:
         if full_info:
+            statement = select(self._model.url_id, self._model.used_at,
+                               self._model.client_host,
+                               self._model.client_port
+                               ).where(self._model.url_id == obj_id).offset(
+                offset).limit(max_result)
+
+            results = await db.execute(statement=statement)
             return results.all()
-        return len(results.scalars().all())
+        statement = select(self._model).where(self._model.url_id == obj_id).with_only_columns([func.count()])
+        results = await db.execute(statement=statement)
+        return results.scalar_one()
